@@ -1,8 +1,8 @@
 #!/bin/sh
 #SBATCH --job-name=try1
 #SBATCH --open-mode=append
-#SBATCH --output=$HOME/slurm_jobs/try1/%x_%j.out
-#SBATCH --output=$HOME/slurm_jobs/try1/%x_%j.err
+#SBATCH --output=/home/gridsan/mdamani/slurm_jobs/try1/%x_%j.out
+#SBATCH --error=/home/gridsan/mdamani/slurm_jobs/try1/%x_%j.err
 #SBATCH --export=ALL
 #SBATCH --time=24:00:00
 #SBATCH --mem=8G
