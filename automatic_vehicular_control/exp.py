@@ -125,9 +125,6 @@ class Main(Config):
         c._env = c.create_env()
         c.use_critic = False # Don't need value function on workers
         c.set_model()
-        c.int_net = InteractionNetwork()
-        c.int_optimizer = optim.Adam(c.int_net.parameters())
-        c.int_criterion = nn.MSELoss() 
         c._model.eval()
         c._i = 0
 
@@ -137,6 +134,9 @@ class Main(Config):
     def on_train_start(c):
         c.setdefaults(alg='Algorithm')
         c._env = c.create_env()
+        c.int_net = InteractionNetwork()
+        c.int_optimizer = optim.Adam(c.int_net.parameters())
+        c.int_criterion = nn.MSELoss() 
 
         c._alg = (eval(c.alg) if isinstance(c.alg, str) else c.alg)(c)
         c.set_model()

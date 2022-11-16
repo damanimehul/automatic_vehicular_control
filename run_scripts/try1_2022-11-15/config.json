@@ -1,0 +1,1 @@
+"{\"0\": \" tag=try1 worker_kwargs=[{'circumference':230}]  n_workers=1 n_rollouts_per_step=1  skip_stat_steps=5 horizon=1000 n_steps=100 alg=TRPO use_critic=False tb=False wb=True  gamma=0.999  warmup_steps=20 \"}"
