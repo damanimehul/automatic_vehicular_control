@@ -88,7 +88,7 @@ with open(path+"/runner.sh","w") as file :
     file.close() 
 
 with open(path+"/job.slurm","w") as f :
-    f.write('#!/bin/sh\n') 
+    f.write('#!/bin/bash\n') 
     f.write('#SBATCH --job-name={}\n'.format(experiment_name)) 
     f.write('#SBATCH --open-mode=append\n') 
     f.write('#SBATCH --output=/home/gridsan/mdamani/automatic_vehicular_control/slurm_jobs/{}/%x_%j.out\n'.format(args.name)) 

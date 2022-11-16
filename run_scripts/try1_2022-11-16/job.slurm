@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #SBATCH --job-name=try1
 #SBATCH --open-mode=append
 #SBATCH --output=/home/gridsan/mdamani/automatic_vehicular_control/slurm_jobs/try1/%x_%j.out
