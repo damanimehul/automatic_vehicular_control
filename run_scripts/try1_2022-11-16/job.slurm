@@ -8,10 +8,8 @@
 #SBATCH --mem=8G
 #SBATCH -c 1
 #SBATCH -N 1
-"
 module purge
 source ~/.bashrc
 module load anaconda/2021b
 cd $HOME/automatic_vehicular_control
 python full_runner.py --path run_scripts/try1_2022-11-16
-"
