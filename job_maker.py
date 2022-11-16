@@ -82,6 +82,11 @@ with open(path+"/config.json","w") as file :
     json.dump(encoded_configs,file) 
     file.close() 
 
+with open(path+"/runner.sh","w") as file : 
+    file.write('mkdir /home/gridsan/mdamani/automatic_vehicular_control/slurm_jobs/{}\n'.format(args.name)) 
+    file.write('sbatch job.slurm ') 
+    file.close() 
+
 with open(path+"/job.slurm","w") as f :
     f.write('#!/bin/sh\n') 
     f.write('#SBATCH --job-name={}\n'.format(experiment_name)) 
@@ -97,6 +102,5 @@ with open(path+"/job.slurm","w") as f :
     f.write('source ~/.bashrc\n') 
     f.write('mdoule load anaconda/2021b\n') 
     f.write('cd $HOME/automatic_vehicular_control\n')
-    f.write('mkdir slurm_jobs/{}\n'.format(args.name))
     f.write('python full_runner.py --path {}\n'.format(path)) 
     #f.write('"')
