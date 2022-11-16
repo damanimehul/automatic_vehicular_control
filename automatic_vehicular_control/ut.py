@@ -1,5 +1,7 @@
+from audioop import mul
 import scipy.signal
 from gym.spaces import Box, Discrete
+from copy import deepcopy
 
 from automatic_vehicular_control.u import *
 
@@ -634,3 +636,200 @@ class TRPO(Algorithm):
         c.flush_writer_buffer()
         entropy = test_dist.entropy().mean()
         c.log_stats(from_torch(dict(policy_loss=-obj, final_policy_loss=-test_obj, i_scale=i_scale, kl=kl, entropy=entropy)))
+
+class InteractionNetwork(nn.Module):
+    def __init__(self, object_dim=4,action_dim=1,effect_dim=32):
+        super(InteractionNetwork, self).__init__()
+        
+        self.relational_model = RelationalModel(2*object_dim + 2*action_dim, effect_dim, 64)
+        self.object_model     = ObjectModel(object_dim +effect_dim+action_dim, 64 ,object_dim)
+        self.object_dim = object_dim
+        self.effect_dim = effect_dim
+        self.action_dim = action_dim
+    
+    def forward(self, fo_in, fr_u, fr_v): 
+        effects = self.relational_model(torch.cat([fr_u,fr_v],2))
+        effects=  effects.view(-1,self.effect_dim)
+        obj_in = torch.cat([fo_in, effects],1) 
+        predicted = self.object_model(obj_in)
+        return predicted
+
+    def optimize(self,c) : 
+        batch_stats, multi_step_stats=[],[] 
+        for i in range(50):
+            batch = c.buffer.sample_batch() 
+            fo_in, fr_u,fr_v ,y= batch['fo_u'], batch['fr_u'], batch['fr_v'] , batch['y']
+            fo_in, fr_u,fr_v,y = torch.from_numpy(fo_in), torch.from_numpy(fr_u), torch.from_numpy(fr_v), torch.from_numpy(y)
+            predicted = c.int_net(fo_in.float(),fr_u.float(),fr_v.float()) 
+            loss = c.int_criterion(predicted, y.float())
+            c.int_optimizer.zero_grad()
+            loss.backward()
+            c.int_optimizer.step()     
+            batch_stats.append(dict(model_learning_loss=from_torch(loss)))
+        c.log_stats(pd.DataFrame(batch_stats).mean(axis=0), ii=i, n_ii=c.n_gds) 
+        c.flush_writer_buffer() 
+
+        features = ['speed','leader_speed','dist'] 
+ 
+        for _ in range(100) : 
+            losses,feature_losses,baseline_losses = self.test_multi_step(c) 
+            for t in range(1,10) :
+                stat = {'{}_step_loss'.format(t):from_torch(losses[t])}
+                multi_step_stats.append(stat)  
+            for t in [1,5,9] : 
+                for f in features : 
+                    stat = {'{}_{}_step_loss'.format(f,t):from_torch(feature_losses[t][f])} 
+                    multi_step_stats.append(stat) 
+                stat = {'baseline_{}_step_loss'.format(t):from_torch(baseline_losses[t])} 
+                multi_step_stats.append(stat) 
+
+        c.log_stats(pd.DataFrame(multi_step_stats).mean(axis=0), ii=i, n_ii=c.n_gds) 
+        c.flush_writer_buffer() 
+
+    def test_multi_step(self,c) : 
+        init_state = c.buffer.sample_multi_step() 
+        fo_in, fr_u,fr_v ,r_map, num_objects = init_state['fo_in'], init_state['fr_u'], init_state['fr_v'] ,init_state['r'], init_state['num_objects']
+        fo_in, fr_u,fr_v = torch.from_numpy(fo_in), torch.from_numpy(fr_u), torch.from_numpy(fr_v)
+        x_init = deepcopy(fo_in[:,0:4])
+        losses,feature_losses,baseline_losses ={} , {} , {} 
+        ground_truths = {} 
+        actions = {} 
+        for k in range(1,10) : 
+            ground_truths[k] = torch.from_numpy(init_state['y_{}'.format(k)] )
+            losses[k] = [] 
+            actions[k] = torch.from_numpy(init_state['a_{}'.format(k)] ) 
+            if k in [1,5,9] :
+                baseline_losses[k] = c.int_criterion(ground_truths[k].float(), x_init.float()) 
+
+        for t in range(1,10): 
+            a = actions[t] 
+            predicted = c.int_net(fo_in.float(),fr_u.float(),fr_v.float()) 
+            y = ground_truths[t]
+            losses[t] = c.int_criterion(predicted, y.float()) 
+            feature_losses = self.individual_losses(y,predicted,t,feature_losses,c) 
+            predicted = torch.cat([predicted,a],dim=1)
+            fo_in = predicted 
+            fr_u = predicted.view(-1,1,self.object_dim+self.action_dim) 
+            for i in range(num_objects) : 
+                fr_v[i] = fo_in[int(r_map[i])] 
+            fr_v = fr_v.view(-1,1,self.object_dim+self.action_dim) 
+            
+        return losses,feature_losses,baseline_losses
+
+    def individual_losses(self,y,predicted,t,feature_losses,c) : 
+        if t in [1,5,9]:
+            feature_losses[t] = {} 
+            features = ['speed','leader_speed','dist']
+            for i,f in enumerate(features) : 
+                x_feature = predicted[:,i] 
+                y_actual  = y[:,i] 
+                loss = c.int_criterion(x_feature,y_actual) 
+                feature_losses[t][f] = loss 
+        return feature_losses 
+
+class ObjectModel(nn.Module):
+    def __init__(self, input_size, hidden_size,output_size):
+        super(ObjectModel, self).__init__()
+        
+        self.layers = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, output_size), 
+        )
+        
+    def forward(self, x):
+        '''
+        Args:
+            x: [batch_size, n_objects, input_size]
+        Returns:
+            [batch_size, n_objects] speedX and speedY
+        '''
+        x = self.layers(x) 
+        return x 
+
+class RelationalModel(nn.Module):
+    def __init__(self, input_size, output_size, hidden_size):
+        super(RelationalModel, self).__init__()
+        
+        self.output_size = output_size
+        
+        self.layers = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, output_size),
+            nn.ReLU()
+        )
+    
+    def forward(self, x):
+        '''
+        Args:
+            x: [batch_size, n_relations, input_size]
+        Returns:
+            [batch_size, n_relations, output_size]
+        '''
+        batch_size, n_relations, input_size = x.size()
+        x = x.view(-1, input_size)
+        x = self.layers(x)
+        x = x.view(batch_size, n_relations, self.output_size)
+        return x
+
+class SimpleNetwork(nn.Module):
+    def __init__(self, object_dim=4,action_dim=1):
+        super(SimpleNetwork, self).__init__()
+        self.object_model     = ObjectModel(object_dim+action_dim, 100,object_dim)
+        self.object_dim = object_dim
+        self.action_dim = action_dim
+    
+    def forward(self, obj_in):
+        predicted = self.object_model(obj_in)
+        return predicted
+
+    def optimize(self,c) : 
+        batch_stats, multi_step_stats=[],[] 
+        for i in range(50):
+            batch = c.buffer.sample_batch() 
+            fo_in,y = batch['fo_u'], batch['y']
+            fo_in,y = torch.from_numpy(fo_in),torch.from_numpy(y)
+            predicted = c.int_net(fo_in.float())
+            loss = c.int_criterion(predicted, y.float())
+            c.int_optimizer.zero_grad()
+            loss.backward()
+            c.int_optimizer.step()  
+            batch_stats.append(dict(model_learning_loss=from_torch(loss)))
+        c.log_stats(pd.DataFrame(batch_stats).mean(axis=0), ii=i, n_ii=c.n_gds) 
+        c.flush_writer_buffer() 
+        for _ in range(100) : 
+            losses,baseline_losses = self.test_multi_step(c) 
+            for t in range(1,10) :
+                stat = {'{}_step_loss'.format(t):from_torch(losses[t])}
+                multi_step_stats.append(stat) 
+                if t in [1,5,9] : 
+                    stat = {'baseline_{}_step_loss'.format(t):from_torch(baseline_losses[t])} 
+                    multi_step_stats.append(stat) 
+        c.log_stats(pd.DataFrame(multi_step_stats).mean(axis=0), ii=i, n_ii=c.n_gds) 
+        c.flush_writer_buffer() 
+
+    def test_multi_step(self,c) : 
+        init_state = c.buffer.sample_multi_step() 
+        fo_in, fr_u,fr_v ,r_map, num_objects = init_state['fo_in'], init_state['fr_u'], init_state['fr_v'] ,init_state['r'], init_state['num_objects']
+        fo_in, fr_u,fr_v = torch.from_numpy(fo_in), torch.from_numpy(fr_u), torch.from_numpy(fr_v)
+        x_init = deepcopy(fo_in[:,0:4])
+        losses,baseline_losses={} , {} 
+        ground_truths = {} 
+        actions= {} 
+        for k in range(1,10) : 
+            ground_truths[k] = torch.from_numpy(init_state['y_{}'.format(k)] )
+            losses[k] = [] 
+            actions[k] = torch.from_numpy(init_state['a_{}'.format(k)] )
+            if k in [1,5,9] :
+                baseline_losses[k] = c.int_criterion(ground_truths[k].float(), x_init.float()) 
+        for t in range(1,10): 
+            a=actions[t] 
+            predicted = c.int_net(fo_in.float())
+            y = ground_truths[t]
+            losses[t] = c.int_criterion(predicted, y.float()) 
+            predicted = torch.cat([predicted,a],dim=1)
+            fo_in = predicted  
+        return losses, baseline_losses

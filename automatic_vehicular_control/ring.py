@@ -1,6 +1,159 @@
 from automatic_vehicular_control.exp import *
 from automatic_vehicular_control.env import *
 from automatic_vehicular_control.u import *
+import copy 
+
+class buffer() : 
+
+    def __init__(self,obs_size=4,batch_size=32,replay_size=2000000,prediction_horizon=10,num_relations=1,action_dim=1) : 
+        # This buffer will only handle fixed number of object relations (currently 1), if the number of relations are not fixed, then a different
+        # setup for the buffer will probably be needed 
+        self.num_relations = num_relations
+        self.fr_u = np.zeros((replay_size,self.num_relations,obs_size+action_dim)) 
+        self.fr_v = np.zeros((replay_size,self.num_relations,obs_size+action_dim)) 
+        self.fo_in = np.zeros((replay_size,obs_size+action_dim)) 
+        self.actions =  np.zeros((replay_size,action_dim)) 
+        self.y     = np.zeros((replay_size,obs_size)) 
+        self.ptr, self.size, self.max_size = 0, 0,replay_size
+        self.batch_size = batch_size 
+        self.trajectory = {} 
+        self.ground_truth = {} 
+        self.o_size = obs_size
+        self.horizon = prediction_horizon
+        self.multi_step_struct =[] 
+        self.relation_map = [] 
+        self.ep_len = 0
+        self.action_dim = action_dim 
+
+    def step_update(self,o,r,a) : 
+        self.relation_map.append(r) 
+        for o_key,obs2 in o.items() :
+            if o_key not in self.trajectory : 
+                self.trajectory[o_key] = [ ] 
+                self.ground_truth[o_key] = [ ] 
+            obs = copy.deepcopy(obs2)
+            obs.append(a[o_key]) 
+            #Check number of relations  
+            relations = r[o_key]
+            num_r = len(relations) 
+            # Make appropriate dimension input for given object 
+            u =  np.repeat(np.expand_dims(obs,axis=0), repeats=num_r,axis=0) 
+            # Make appropriate dimension input for relations 
+            v = np.zeros((num_r,self.o_size+self.action_dim)) 
+            # Make appropriate dimension input for actons 
+            w = np.zeros((1,self.action_dim))
+            w[0] = a[o_key]
+            
+            for i in range(num_r) :
+                # Id of vehicle 
+                r_key= relations[i] 
+                # Corresponding obs for that vehicle 
+                r_obs = copy.deepcopy(o[r_key]) 
+                r_obs.append(a[r_key])
+                # Add this relation object to v  
+                v[i] = np.array(r_obs)   
+            
+            # To trajectory append (my obs, n copies of my obs where n = number of relations, n obs of related vehicles)
+            self.trajectory[o_key].append([obs,u,v,w,obs2])  
+            # If this is not the initial step, then append ground truth observation as well. By skipping the first step, we automatically ensure that ground 
+            # truths (y(t)) correspond to (x(t-1)) 
+            if len(self.trajectory[o_key]) != 1:      
+                self.ground_truth[o_key].append(obs2) 
+        self.ep_len +=1 
+
+    def push_to_buffer(self) : 
+        # For each object (vehicle) in the trajectory 
+        for k in self.trajectory :
+            # Remove last element, since we will not have the ground truth for the last element 
+            self.trajectory[k].pop() 
+            # Sanity check assertion, 
+            assert(len(self.trajectory[k])) == len(self.ground_truth[k]) 
+            # Build up the buffer 
+            for item,y in zip(self.trajectory[k],self.ground_truth[k]) :
+                # my observation 
+                self.fo_in[self.ptr] = item[0] 
+                # my observation repated n times
+                self.fr_u[self.ptr] = item[1] 
+                # related vehicles obs repeated n times (n= number of relations)
+                self.fr_v[self.ptr] = item[2]  
+                self.actions[self.ptr] = item[3] 
+                # ground truth 
+                self.y[self.ptr]   = y 
+                # 2 updates to maintain insertion ptr for entry into buffer
+                self.ptr = (self.ptr+1)% self.max_size
+                self.size = min(self.size+1,self.max_size)
+
+    def one_step_push(self,t) : 
+        # This currently only supports fixed number of relations for the system i.e., each object should have r relations throughout training
+        num_objects = len(self.trajectory) 
+        new_struct = {'fr_u':np.zeros((num_objects,self.num_relations,self.o_size+self.action_dim)),'fr_v':np.zeros((num_objects,self.num_relations,self.o_size+self.action_dim)),
+        'fo_in':np.zeros((num_objects,self.o_size+self.action_dim))} 
+        # Building up a data structure for multi-step prediction
+        for k in range(1,self.horizon) : 
+            # Ground truths for next self.horizon steps 
+            new_struct['y_{}'.format(k)] = np.zeros((num_objects,self.o_size)) 
+            new_struct['a_{}'.format(k)] = np.zeros((num_objects,self.action_dim)) 
+
+        # Current relation map (this is fixed for the ring env but I assume dynamic relations) 
+        relations = self.relation_map[t] 
+        # We have to rebuild the relation map because we lost the order through indexing from 0 to num_objects (done below)
+        r_map = np.zeros((num_objects)) 
+        veh_order =[] 
+        for i,k in enumerate(self.trajectory) : 
+                # For each object, store the relevant observations at timestep t 
+                # My own obs 
+                new_struct['fo_in'][i] = self.trajectory[k][t][0] 
+                # My own obs, repeated num_relations times? 
+                new_struct['fr_u'][i] = self.trajectory[k][t][1]
+                # Observations of related vehicles  
+                new_struct['fr_v'][i] = self.trajectory[k][t][2] 
+                for j in range(1,self.horizon) : 
+                    # Appropriate ground truth j steps ahead, j up to horizon
+                    new_struct['y_{}'.format(j)][i] = self.trajectory[k][t+j-1][4] 
+                    new_struct['a_{}'.format(j)][i] = self.trajectory[k][t+j-1][3] 
+            
+                # Keeping track of the vehicle id at ith index
+                veh_order.append(int(k))
+
+        # For each object 
+        for i,k in enumerate(self.trajectory) : 
+            # Find the vehicle id of my relation
+            leader_id = relations[k][0]  
+            #Find the index that vehicle id was inserted at 
+            leader_ind = veh_order.index(int(leader_id)) 
+            # Mark the relation map to point to that related vehicle 
+            r_map[i] = leader_ind
+        
+        # Store the new relation map (which is equivalent to the original relations but just maps to indexes instead of ids)
+        new_struct['r'] = r_map 
+        new_struct['num_objects'] = num_objects
+        self.multi_step_struct.append(new_struct) 
+  
+    def sample_batch(self) :
+        # Sample random idxs from buffer 
+        # fr_u,fr_v are input to the relation model, effects (obtained using relation model) and fo_u are input to the object model, y is the ground truth
+        idxs = np.random.randint(0, self.size, size=self.batch_size)
+        return dict(fr_u=self.fr_u[idxs],
+                    fr_v=self.fr_v[idxs],
+                    fo_u=self.fo_in[idxs],
+                    y=self.y[idxs])
+
+    def sample_multi_step(self) : 
+        # To test multi-step prediction for all vehicles at a given timestep, a single element from the multi_step_struct is sampled (This is not used for training
+        # but is used for evaluating the performance of the model on long horizon predictions)
+        ind = np.random.randint(0,len(self.multi_step_struct)) 
+        return self.multi_step_struct[ind] 
+    
+    def end_episode(self): 
+        # Pushing to buffer just builds up the training buffer 
+        self.push_to_buffer()
+        for t in range(self.ep_len - self.horizon) :
+            self.one_step_push(t)
+        # Reset quantities which just need to be stored for the duration of a trajectory  
+        self.ep_len = 0 
+        self.trajectory = {} 
+        self.ground_truth = {} 
+        self.relation_map = [] 
 
 class RingEnv(Env):
     def def_sumo(self):
@@ -101,6 +254,31 @@ class RingEnv(Env):
                 else:
                     ts.lane_change_to(rl, lc)
 
+        obs_dict = {} 
+        relations_dict = {} 
+        actions_dict = {} 
+
+        for veh in ts.types.human.vehicles:
+            leader, dist = veh.leader() 
+            obs = [veh.speed / max_speed, leader.speed / max_speed, dist / max_dist,0]
+            obs_dict[veh.id] = obs 
+            relations_dict[veh.id] = [leader.id]   
+            actions_dict[veh.id]  = 0 
+        
+        if action is None : 
+            a = -1 
+        else :
+            a= action[0]
+
+        for veh in ts.types.rl.vehicles : 
+            leader, dist = veh.leader() 
+            obs = [veh.speed / max_speed, leader.speed / max_speed, dist / max_dist,1]
+            obs_dict[veh.id] = obs 
+            relations_dict[veh.id] = [leader.id]  
+            actions_dict[veh.id]  = a  
+
+        self.c.buffer.step_update(obs_dict,relations_dict,actions_dict)
+        
         super().step()
 
         if len(ts.new_arrived | ts.new_collided):
@@ -185,6 +363,7 @@ class Ring(Main):
         super().on_train_start()
         if c.get('last_unbiased'):
             c._model.p_head[-1].bias.data[c.lc_av:] = 0
+        c.buffer = buffer()
 
     def on_step_end(c, gd_stats):
         super().on_step_end(gd_stats)
@@ -194,7 +373,7 @@ class Ring(Main):
 if __name__ == '__main__':
     c = Ring.from_args(globals(), locals()).setdefaults(
         n_lanes=1,
-        horizon=3000,
+        horizon=1000,
         warmup_steps=1000,
         sim_step=0.1,
         av=1,
@@ -207,10 +386,11 @@ if __name__ == '__main__':
         circumference_range=None,
         initial_space='free',
         sigma=0.2,
+        n_workers=1, 
 
         circ_feature=False,
         accel_feature=False,
-        act_type='accel',
+        act_type='continuous',
         lc_act_type='discrete',
         low=-1,
         high=1,
@@ -221,11 +401,14 @@ if __name__ == '__main__':
 
         n_steps=100,
         gamma=0.999,
-        alg=PG,
+        alg='TRPO',
         norm_reward=True,
         center_reward=True,
         adv_norm=False,
         step_save=None,
+        wb=True, tb = False, 
+        tag='trial',
+        
 
         render=False,
     )
@@ -239,3 +422,43 @@ if __name__ == '__main__':
     c.step_save = c.step_save or min(5, c.n_steps // 10)
     c.redef_sumo = bool(c.circumference_range)
     c.run()
+
+
+
+
+
+#class graph() :
+#    def __init__(self,o_size,objects,relations) : 
+#        self.__init__ 
+#        self.o_size= int(o_size)
+#        self.objects = objects
+#        self.relations = relations 
+        
+#    def relation_inputs(self,o,r) :
+#        r_inputs = {} 
+#        for o_key,obs in o.items() :
+#            num_r = len(r[o_key]) 
+#            r_input = np.zeros((num_r,2*self.o_size))
+#            for i in range(num_r) :
+#                r_key= r[o_key][i]
+#                r_input[i] = np.concatenate((np.array(obs),np.array(o[r_key]))) 
+#            r_inputs[o_key] = r_input 
+#        return r_inputs 
+
+#    def multi_step_prediction(self,o,r,k) : 
+#        predictions = {} 
+#        for t in range(1,k+1) :
+#            r_inputs = self.relation_inputs(o,r)
+#            o_next,r_next = self.one_step_prediction(o,r_inputs)   
+#            predictions[t] = o_next  
+#            o,r = o_next,r_next 
+#        return predictions 
+
+#    def one_step_prediction(self,o,r_inputs): 
+#        one_step_pred = {} 
+#        for key,obs in o.items() : 
+#            errors = self.rel_f(r_inputs) 
+#            agg_errors = np.sum(errors,axis=1)  
+#            next_obs = self.obj_f(obs,agg_errors) 
+#            one_step_pred[key] = next_obs
+#         return one_step_pred 

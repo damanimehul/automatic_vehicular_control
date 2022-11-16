@@ -125,6 +125,9 @@ class Main(Config):
         c._env = c.create_env()
         c.use_critic = False # Don't need value function on workers
         c.set_model()
+        c.int_net = InteractionNetwork()
+        c.int_optimizer = optim.Adam(c.int_net.parameters())
+        c.int_criterion = nn.MSELoss() 
         c._model.eval()
         c._i = 0
 
@@ -139,6 +142,7 @@ class Main(Config):
         c.set_model()
         c._model.train()
         c._model.to(c.device)
+        c.int_net.to(c.device) 
 
         c._i = 0 # for c._lr
         opt = c.get('opt', 'Adam')
@@ -165,9 +169,9 @@ class Main(Config):
             import wandb
             wandb_id_path = (c.res / 'wandb' / 'id.txt').dir_mk()
             c._wandb_run = wandb.init( # name and project should be set as env vars
-                name=c.res.rel(Path.env('FA')),
+                name=c.tag,
                 dir=c.res,
-                id=wandb_id_path.load() if wandb_id_path.exists() else None,
+                id= None,
                 config={k: v for k, v in c.items() if not k.startswith('_')},
                 save_code=False
             )
@@ -247,6 +251,7 @@ class Main(Config):
             rollout.append(**ret)
             step += 1
         stats = dict(rollout_time=time() - t_start, **c.get_env_stats())
+        c.buffer.end_episode() 
         return rollout, stats
 
     def on_rollout_end(c, rollout, stats, ii=None):
@@ -316,6 +321,7 @@ class Main(Config):
                 t_start = time()
                 c._alg.optimize(rollouts)
                 gd_stats.update(gd_time=time() - t_start)
+                c.int_net.optimize(c) 
             c.on_step_end(gd_stats)
             c._i += 1
         c.on_step_start() # last step
