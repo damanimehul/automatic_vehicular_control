@@ -96,7 +96,7 @@ with open(path+"/job.slurm","w") as f :
     f.write('module purge\n')
     f.write('source ~/.bashrc\n') 
     f.write('mdoule load anaconda/2021b\n') 
-    f.write('mkdir $HOME/automatic_vehicular_control/slurm_jobs/{}\n'.format(args.name))
     f.write('cd $HOME/automatic_vehicular_control\n')
+    f.write('mkdir slurm_jobs/{}\n'.format(args.name))
     f.write('python full_runner.py --path {}\n'.format(path)) 
     #f.write('"')

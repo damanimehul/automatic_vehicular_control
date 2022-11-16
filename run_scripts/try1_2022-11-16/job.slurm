@@ -11,6 +11,6 @@
 module purge
 source ~/.bashrc
 mdoule load anaconda/2021b
-mkdir $HOME/automatic_vehicular_control/slurm_jobs/try1
 cd $HOME/automatic_vehicular_control
+mkdir slurm_jobs/try1
 python full_runner.py --path run_scripts/try1_2022-11-16
