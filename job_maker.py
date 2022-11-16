@@ -98,6 +98,7 @@ with open(path+"/job.slurm","w") as f :
     f.write('#SBATCH --mem=8G\n')
     f.write('#SBATCH -c 1\n') 
     f.write('#SBATCH -N 1\n') 
+    f.write('"\n')
     f.write('module purge\n')
     f.write('source ~/.bashrc\n') 
     f.write('module load anaconda/2021b\n') 
