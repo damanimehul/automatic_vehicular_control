@@ -647,7 +647,7 @@ class InteractionNetwork(nn.Module):
         self.effect_dim = effect_dim
         self.action_dim = action_dim
         self.prediction_horizon = c.prediction_horizon 
-        self.log_steps,i = [], 1  
+        self.log_steps,i = [1,2,3,4], 5
         while i <self.prediction_horizon : 
             self.log_steps.append(i) 
             i+=4 
@@ -787,7 +787,7 @@ class SimpleNetwork(nn.Module):
         self.object_dim = object_dim
         self.action_dim = action_dim
         self.prediction_horizon = c.prediction_horizon 
-        self.log_steps,i = [], 1  
+        self.log_steps,i = [1,2,3,4], 5
         while i <self.prediction_horizon : 
             self.log_steps.append(i) 
             i+=4 

@@ -5,7 +5,7 @@ import copy
 
 class buffer() : 
 
-    def __init__(self,obs_size=4,batch_size=32,replay_size=200000,prediction_horizon=10,num_relations=1,action_dim=1) : 
+    def __init__(self,obs_size=4,batch_size=32,replay_size=2000000,prediction_horizon=10,num_relations=1,action_dim=1) : 
         # This buffer will only handle fixed number of object relations (currently 1), if the number of relations are not fixed, then a different
         # setup for the buffer will probably be needed 
         self.num_relations = num_relations
@@ -71,6 +71,11 @@ class buffer() :
             assert(len(self.trajectory[k])) == len(self.ground_truth[k]) 
             # Build up the buffer 
             for item,y in zip(self.trajectory[k],self.ground_truth[k]) :
+                if k in [0,'0'] : 
+                    pass 
+                else : 
+                    if np.random.rand()>0.2 : 
+                        break  
                 # my observation 
                 self.fo_in[self.ptr] = item[0] 
                 # my observation repated n times

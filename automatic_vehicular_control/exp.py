@@ -329,7 +329,11 @@ class Main(Config):
             gd_stats = {}
             if len(rollouts.obs):
                 t_start = time()
-                c._alg.optimize(rollouts)
+                try : 
+                    c._alg.optimize(rollouts)
+                except :
+                    print('Problem in RL training at iteration',c._i) 
+                    print(rollouts)
                 gd_stats.update(gd_time=time() - t_start)
                 c.int_net.optimize(c) 
             c.on_step_end(gd_stats)
