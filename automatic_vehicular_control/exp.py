@@ -133,8 +133,14 @@ class Main(Config):
 
     def on_train_start(c):
         c.setdefaults(alg='Algorithm')
-        c._env = c.create_env()
-        c.int_net = InteractionNetwork()
+        c._env = c.create_env() 
+        c.setdefaults(dynamics='interaction',prediction_horizon=10,no_rl=False,wboffline=False)
+        if c.dynamics == 'interaction': 
+            c.int_net = InteractionNetwork(c) 
+            print('Dynamics Model Set to Interaction Network')
+        else : 
+            c.int_net = SimpleNetwork(c) 
+            print('Dynamics Model Set to Simple Network')
         c.int_optimizer = optim.Adam(c.int_net.parameters())
         c.int_criterion = nn.MSELoss() 
 
@@ -162,20 +168,24 @@ class Main(Config):
 
         c.try_save_commit(Main.flow_base)
 
+
         if c.tb:
             from torch.utils.tensorboard import SummaryWriter
             c._writer = SummaryWriter(log_dir=c.res, flush_secs=10)
         if c.wb:
             import wandb
-            wandb_id_path = (c.res / 'wandb' / 'id.txt').dir_mk()
+            #wandb_id_path = ('wandb' ).dir_mk()
+            if c.wboffline :
+                os.environ["WANDB_MODE"] = "offline" 
             c._wandb_run = wandb.init( # name and project should be set as env vars
                 name=c.tag,
-                dir=c.res,
+                project='tamp',
                 id= None,
                 config={k: v for k, v in c.items() if not k.startswith('_')},
                 save_code=False
             )
-            wandb_id_path.save(c._wandb_run.id)
+
+            #wandb_id_path.save(c._wandb_run.id)
             c._writer = wandb
         c._writer_buffer = NamedArrays()
 

@@ -203,6 +203,9 @@ class RingEnv(Env):
         circ_min = c.circumference_min
         rl_type = ts.types.rl
 
+        if c.no_rl : 
+            action = None 
+        
         if not rl_type.vehicles:
             super().step()
             return c.observation_space.low, 0, False, 0
@@ -276,7 +279,7 @@ class RingEnv(Env):
             obs_dict[veh.id] = obs 
             relations_dict[veh.id] = [leader.id]  
             actions_dict[veh.id]  = a  
-
+  
         self.c.buffer.step_update(obs_dict,relations_dict,actions_dict)
         
         super().step()
@@ -363,7 +366,7 @@ class Ring(Main):
         super().on_train_start()
         if c.get('last_unbiased'):
             c._model.p_head[-1].bias.data[c.lc_av:] = 0
-        c.buffer = buffer()
+        c.buffer = buffer(prediction_horizon=c.prediction_horizon)
 
     def on_step_end(c, gd_stats):
         super().on_step_end(gd_stats)
@@ -384,7 +387,7 @@ if __name__ == '__main__':
         circumference_max=300,
         circumference_min=200,
         circumference_range=None,
-        initial_space='free',
+        initial_space='random_free',
         sigma=0.2,
         n_workers=1, 
 

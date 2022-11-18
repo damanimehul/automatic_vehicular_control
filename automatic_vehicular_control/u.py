@@ -552,7 +552,7 @@ class Path(str):
 
     def load_yaml(self):
         with open(self, 'r') as f:
-            return yaml.safe_load(f)
+            return yaml.safe_load(f) 
 
     def save_yaml(self, obj):
         obj = recurse(obj, lambda x: x.str if isinstance(x, Path) else dict(x) if isinstance(x, Dict) else x)
@@ -887,10 +887,11 @@ class Config(Namespace):
         return self.res / 'config.yaml'
 
     def load(self):
-        if self.path.exists():
-            for k, v in self.path.load().items():
-                self[k] = v
-        return self
+        pass 
+        #if self.path.exists():
+         #   for k, v in self.path.load().items():
+         #       self[k] = v
+        #return self
 
     never_save = {'res', 'name', 'main', 'logger', 'distributed', 'parallel', 'device', 'steps', 'debug'}
     @property
@@ -924,8 +925,12 @@ class Config(Namespace):
                 except (SyntaxError, NameError):
                     pass
             kwargs[splits[0]] = v
-
-        return cls(args.res, **kwargs).save()
+        try :
+            res = kwargs['res']
+            del kwargs['res'] 
+        except :
+            res = args.res 
+        return cls(res, **kwargs).save()
 
     def try_save_commit(self, base_dir=None):
         base_commit, diff, status = git_state(base_dir)

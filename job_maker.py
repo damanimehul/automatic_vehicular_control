@@ -71,7 +71,7 @@ if __name__ == '__main__':
  
     for setup in configs :  
 
-        config_dict[len(config_dict)] = str(' tag={} '.format(experiment_name) + str("worker_kwargs=[{'circumference':230}]") + ' {}'.format(args.params))
+        config_dict[len(config_dict)] = str(' tag={} '.format(experiment_name) +  '{}'.format(args.params))
                           
 encoded_configs = jsonpickle.encode(config_dict) 
 path = "run_scripts/" + experiment_name + "_" + time.strftime("%Y-%m-%d") 

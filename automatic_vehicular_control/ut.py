@@ -638,7 +638,7 @@ class TRPO(Algorithm):
         c.log_stats(from_torch(dict(policy_loss=-obj, final_policy_loss=-test_obj, i_scale=i_scale, kl=kl, entropy=entropy)))
 
 class InteractionNetwork(nn.Module):
-    def __init__(self, object_dim=4,action_dim=1,effect_dim=32):
+    def __init__(self,c, object_dim=4,action_dim=1,effect_dim=32):
         super(InteractionNetwork, self).__init__()
         
         self.relational_model = RelationalModel(2*object_dim + 2*action_dim, effect_dim, 64)
@@ -646,6 +646,11 @@ class InteractionNetwork(nn.Module):
         self.object_dim = object_dim
         self.effect_dim = effect_dim
         self.action_dim = action_dim
+        self.prediction_horizon = c.prediction_horizon 
+        self.log_steps,i = [], 1  
+        while i <self.prediction_horizon : 
+            self.log_steps.append(i) 
+            i+=4 
     
     def forward(self, fo_in, fr_u, fr_v): 
         effects = self.relational_model(torch.cat([fr_u,fr_v],2))
@@ -658,7 +663,7 @@ class InteractionNetwork(nn.Module):
         batch_stats, multi_step_stats=[],[] 
         for i in range(50):
             batch = c.buffer.sample_batch() 
-            fo_in, fr_u,fr_v ,y= batch['fo_u'], batch['fr_u'], batch['fr_v'] , batch['y']
+            fo_in, fr_u,fr_v,y= batch['fo_u'], batch['fr_u'], batch['fr_v'] , batch['y']
             fo_in, fr_u,fr_v,y = torch.from_numpy(fo_in), torch.from_numpy(fr_u), torch.from_numpy(fr_v), torch.from_numpy(y)
             predicted = c.int_net(fo_in.float(),fr_u.float(),fr_v.float()) 
             loss = c.int_criterion(predicted, y.float())
@@ -673,10 +678,10 @@ class InteractionNetwork(nn.Module):
  
         for _ in range(100) : 
             losses,feature_losses,baseline_losses = self.test_multi_step(c) 
-            for t in range(1,10) :
+            for t in self.log_steps :
                 stat = {'{}_step_loss'.format(t):from_torch(losses[t])}
                 multi_step_stats.append(stat)  
-            for t in [1,5,9] : 
+            for t in self.log_steps : 
                 for f in features : 
                     stat = {'{}_{}_step_loss'.format(f,t):from_torch(feature_losses[t][f])} 
                     multi_step_stats.append(stat) 
@@ -694,14 +699,14 @@ class InteractionNetwork(nn.Module):
         losses,feature_losses,baseline_losses ={} , {} , {} 
         ground_truths = {} 
         actions = {} 
-        for k in range(1,10) : 
+        for k in range(1,self.prediction_horizon) : 
             ground_truths[k] = torch.from_numpy(init_state['y_{}'.format(k)] )
             losses[k] = [] 
             actions[k] = torch.from_numpy(init_state['a_{}'.format(k)] ) 
-            if k in [1,5,9] :
+            if k in self.log_steps :
                 baseline_losses[k] = c.int_criterion(ground_truths[k].float(), x_init.float()) 
 
-        for t in range(1,10): 
+        for t in range(1,self.prediction_horizon): 
             a = actions[t] 
             predicted = c.int_net(fo_in.float(),fr_u.float(),fr_v.float()) 
             y = ground_truths[t]
@@ -717,7 +722,7 @@ class InteractionNetwork(nn.Module):
         return losses,feature_losses,baseline_losses
 
     def individual_losses(self,y,predicted,t,feature_losses,c) : 
-        if t in [1,5,9]:
+        if t in self.log_steps:
             feature_losses[t] = {} 
             features = ['speed','leader_speed','dist']
             for i,f in enumerate(features) : 
@@ -776,11 +781,16 @@ class RelationalModel(nn.Module):
         return x
 
 class SimpleNetwork(nn.Module):
-    def __init__(self, object_dim=4,action_dim=1):
+    def __init__(self, c, object_dim=4,action_dim=1):
         super(SimpleNetwork, self).__init__()
         self.object_model     = ObjectModel(object_dim+action_dim, 100,object_dim)
         self.object_dim = object_dim
         self.action_dim = action_dim
+        self.prediction_horizon = c.prediction_horizon 
+        self.log_steps,i = [], 1  
+        while i <self.prediction_horizon : 
+            self.log_steps.append(i) 
+            i+=4 
     
     def forward(self, obj_in):
         predicted = self.object_model(obj_in)
@@ -802,12 +812,11 @@ class SimpleNetwork(nn.Module):
         c.flush_writer_buffer() 
         for _ in range(100) : 
             losses,baseline_losses = self.test_multi_step(c) 
-            for t in range(1,10) :
+            for t in self.log_steps :
                 stat = {'{}_step_loss'.format(t):from_torch(losses[t])}
                 multi_step_stats.append(stat) 
-                if t in [1,5,9] : 
-                    stat = {'baseline_{}_step_loss'.format(t):from_torch(baseline_losses[t])} 
-                    multi_step_stats.append(stat) 
+                stat = {'baseline_{}_step_loss'.format(t):from_torch(baseline_losses[t])} 
+                multi_step_stats.append(stat) 
         c.log_stats(pd.DataFrame(multi_step_stats).mean(axis=0), ii=i, n_ii=c.n_gds) 
         c.flush_writer_buffer() 
 
@@ -819,13 +828,13 @@ class SimpleNetwork(nn.Module):
         losses,baseline_losses={} , {} 
         ground_truths = {} 
         actions= {} 
-        for k in range(1,10) : 
+        for k in range(1,self.prediction_horizon) : 
             ground_truths[k] = torch.from_numpy(init_state['y_{}'.format(k)] )
             losses[k] = [] 
             actions[k] = torch.from_numpy(init_state['a_{}'.format(k)] )
-            if k in [1,5,9] :
+            if k in self.log_steps :
                 baseline_losses[k] = c.int_criterion(ground_truths[k].float(), x_init.float()) 
-        for t in range(1,10): 
+        for t in range(1,self.prediction_horizon): 
             a=actions[t] 
             predicted = c.int_net(fo_in.float())
             y = ground_truths[t]

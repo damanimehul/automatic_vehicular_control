@@ -337,6 +337,7 @@ def build_closed_route(edges, n_veh=0, av=0, space='random_free', type_fn=None, 
     Anything with random could see random vehicle id order along the route
     """
     assert isinstance(space, (float, int)) or space in ('equal', 'random_free', 'free', 'random', 'base', 'last')
+    print('Spacing is ',space)
     order = lambda i: edges[i:] + edges[:i + 1]
     routes = [E('route', id=f'route_{e.id}', edges=' '.join(e_.id for e_ in order(i))) for i, e in enumerate(edges)]
     rerouter = E('rerouter', E('interval', E('routeProbReroute', id=routes[0].id), begin=0, end=1e9), id='reroute', edges=edges[0].id)
