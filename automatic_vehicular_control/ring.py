@@ -24,7 +24,7 @@ class buffer() :
         self.relation_map = [] 
         self.ep_len = 0
         self.action_dim = action_dim 
-        self.max_struct_size, self.struct_ptr, self.reached_max = 20000, 0 , 0  
+        self.max_struct_size, self.struct_ptr, self.reached_max = 30000, 0 , 0  
 
     def step_update(self,o,r,a) : 
         self.relation_map.append(r) 
@@ -154,8 +154,14 @@ class buffer() :
     def end_episode(self): 
         # Pushing to buffer just builds up the training buffer 
         self.push_to_buffer()
-        for t in range(self.ep_len - self.horizon) :
-            self.one_step_push(t)
+        for _ in range(500) :
+            t= np.random.randint(0,self.ep_len-self.horizon)
+            #for t in range(self.ep_len - self.horizon) :
+            try :
+                self.one_step_push(t)
+            except :
+                print('Error building up multi-step struct, breaking')
+                break  
         # Reset quantities which just need to be stored for the duration of a trajectory  
         self.ep_len = 0 
         self.trajectory = {} 
