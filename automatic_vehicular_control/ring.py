@@ -71,11 +71,9 @@ class buffer() :
             assert(len(self.trajectory[k])) == len(self.ground_truth[k]) 
             # Build up the buffer 
             for item,y in zip(self.trajectory[k],self.ground_truth[k]) :
-                if k in [0,'0'] : 
-                    pass 
-                else : 
+                if k not in [0,'0'] :  
                     if np.random.rand()>0.2 : 
-                        break  
+                        continue   
                 # my observation 
                 self.fo_in[self.ptr] = item[0] 
                 # my observation repated n times
@@ -138,7 +136,9 @@ class buffer() :
             self.struct_ptr = (self.struct_ptr+1) % self.max_struct_size 
         else :
             self.multi_step_struct.append(new_struct)
-            self.reached_max = len(self.multi_step_struct) == self.max_struct_size 
+            self.reached_max = len(self.multi_step_struct) == self.max_struct_size
+            if self.reached_max : 
+                print('Reached Maximum for Struct, now samples will be removed from it') 
 
   
     def sample_batch(self) :

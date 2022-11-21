@@ -246,7 +246,11 @@ class Main(Config):
         a_space = c.action_space
         step = 0
         while step < c.horizon + c.skip_stat_steps and not done:
-            pred = from_torch(c._model(to_torch(rollout.obs[-1]), value=False, policy=True, argmax=False))
+            try : 
+                pred = from_torch(c._model(to_torch(rollout.obs[-1]), value=False, policy=True, argmax=False)) 
+            except : 
+                pred = from_torch(c._model(to_torch(rollout.obs[-2]), value=False, policy=True, argmax=False))  
+                print('Something went wrong when doing forward prop', print(obs[-1]))
             if c.get('aclip', True) and isinstance(a_space, Box):
                 pred.action = np.clip(pred.action, a_space.low, a_space.high)
             rollout.append(**pred)
@@ -333,7 +337,6 @@ class Main(Config):
                     c._alg.optimize(rollouts)
                 except :
                     print('Problem in RL training at iteration',c._i) 
-                    print(rollouts)
                 gd_stats.update(gd_time=time() - t_start)
                 c.int_net.optimize(c) 
             c.on_step_end(gd_stats)
