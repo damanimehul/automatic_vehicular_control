@@ -251,7 +251,7 @@ class Main(Config):
                 if c.get('aclip', True) and isinstance(a_space, Box):
                     pred.action = np.clip(pred.action, a_space.low, a_space.high) 
             except :  
-                print('Something went wrong when doing forward prop', print(obs[-1]))
+                print('Something went wrong when doing forward prop', print(rollout.obs[-1]))
                 pred = {} 
                 pred['action'] = np.zeros((1))
                 pred['policy'] = np.zeros((2))
