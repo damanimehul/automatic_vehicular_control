@@ -113,7 +113,7 @@ class buffer() :
                 new_struct['fr_v'][i] = self.trajectory[k][t][2] 
                 for j in range(1,self.horizon) : 
                     # Appropriate ground truth j steps ahead, j up to horizon
-                    new_struct['y_{}'.format(j)][i] = self.trajectory[k][t+j-1][4] 
+                    new_struct['y_{}'.format(j)][i] = self.trajectory[k][t+j][4] 
                     new_struct['a_{}'.format(j)][i] = self.trajectory[k][t+j][3] 
             
                 # Keeping track of the vehicle id at ith index
