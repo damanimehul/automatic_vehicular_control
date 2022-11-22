@@ -114,7 +114,7 @@ class buffer() :
                 for j in range(1,self.horizon) : 
                     # Appropriate ground truth j steps ahead, j up to horizon
                     new_struct['y_{}'.format(j)][i] = self.trajectory[k][t+j-1][4] 
-                    new_struct['a_{}'.format(j)][i] = self.trajectory[k][t+j-1][3] 
+                    new_struct['a_{}'.format(j)][i] = self.trajectory[k][t+j][3] 
             
                 # Keeping track of the vehicle id at ith index
                 veh_order.append(int(k))
@@ -160,7 +160,7 @@ class buffer() :
         # Pushing to buffer just builds up the training buffer 
         self.push_to_buffer()
         for _ in range(500) :
-            t= np.random.randint(0,self.ep_len-self.horizon)
+            t= np.random.randint(0,self.ep_len-self.horizon-1)
             #for t in range(self.ep_len - self.horizon) :
             try :
                 self.one_step_push(t)
