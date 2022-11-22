@@ -221,8 +221,7 @@ class RingEnv(Env):
         circ_min = c.circumference_min
         rl_type = ts.types.rl 
         if c.no_rl : 
-            action = np.zeros((1))
-            action[0] = np.random.rand()*2 -1
+            action = None 
         
         if not rl_type.vehicles:
             super().step()

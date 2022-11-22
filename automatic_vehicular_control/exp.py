@@ -247,12 +247,14 @@ class Main(Config):
         step = 0
         while step < c.horizon + c.skip_stat_steps and not done:
             try : 
-                pred = from_torch(c._model(to_torch(rollout.obs[-1]), value=False, policy=True, argmax=False)) 
-            except : 
-                pred = from_torch(c._model(to_torch(rollout.obs[-2]), value=False, policy=True, argmax=False))  
+                pred = from_torch(c._model(to_torch(rollout.obs[-1]), value=False, policy=True, argmax=False))
+                if c.get('aclip', True) and isinstance(a_space, Box):
+                    pred.action = np.clip(pred.action, a_space.low, a_space.high) 
+            except :  
                 print('Something went wrong when doing forward prop', print(obs[-1]))
-            if c.get('aclip', True) and isinstance(a_space, Box):
-                pred.action = np.clip(pred.action, a_space.low, a_space.high)
+                pred = {} 
+                pred['action'] = np.zeros((1))
+                pred['policy'] = np.zeros((2))
             rollout.append(**pred)
 
             ret = c._env.step(rollout.action[-1])
