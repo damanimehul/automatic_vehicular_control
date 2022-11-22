@@ -219,10 +219,10 @@ class RingEnv(Env):
         max_speed = c.max_speed
         circ_max = max_dist = c.circumference_max
         circ_min = c.circumference_min
-        rl_type = ts.types.rl
-
+        rl_type = ts.types.rl 
         if c.no_rl : 
-            action = None 
+            action = np.zeros((1))
+            action[0] = np.random.rand()*2 -1
         
         if not rl_type.vehicles:
             super().step()
