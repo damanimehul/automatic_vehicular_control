@@ -638,10 +638,10 @@ class TRPO(Algorithm):
         c.log_stats(from_torch(dict(policy_loss=-obj, final_policy_loss=-test_obj, i_scale=i_scale, kl=kl, entropy=entropy)))
 
 class InteractionNetwork(nn.Module):
-    def __init__(self,c, object_dim=4,action_dim=1,effect_dim=32):
+    def __init__(self,c, object_dim=4,action_dim=1,effect_dim=16):
         super(InteractionNetwork, self).__init__()
         
-        self.relational_model = RelationalModel(2*object_dim + 2*action_dim, effect_dim, 64)
+        self.relational_model = RelationalModel(2*object_dim + 2*action_dim, effect_dim, 32)
         self.object_model     = ObjectModel(object_dim +effect_dim+action_dim, 64 ,object_dim)
         self.object_dim = object_dim
         self.effect_dim = effect_dim
@@ -760,8 +760,6 @@ class RelationalModel(nn.Module):
         
         self.layers = nn.Sequential(
             nn.Linear(input_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, output_size),
             nn.ReLU()
