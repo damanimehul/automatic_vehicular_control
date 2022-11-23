@@ -141,7 +141,7 @@ class Main(Config):
         else : 
             c.int_net = SimpleNetwork(c) 
             print('Dynamics Model Set to Simple Network')
-        c.int_optimizer = optim.Adam(c.int_net.parameters())
+        c.int_optimizer = optim.Adam(c.int_net.parameters(),lr=1e-4)
         c.int_criterion = nn.MSELoss() 
 
         c._alg = (eval(c.alg) if isinstance(c.alg, str) else c.alg)(c)
