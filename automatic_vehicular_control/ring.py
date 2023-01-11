@@ -5,7 +5,7 @@ import copy
 
 class new_buffer() : 
 
-    def __init__(self,obs_size=4,batch_size=32,replay_size=2000000,prediction_horizon=10,action_dim=1) : 
+    def __init__(self,obs_size=4,batch_size=1,replay_size=2000000,prediction_horizon=10,action_dim=1) : 
         self.obs_dim = obs_size 
         self.batch_size = batch_size 
         self.replay_size = replay_size 
@@ -16,7 +16,7 @@ class new_buffer() :
         self.max_struct_size, self.struct_ptr, self.reached_max = 30000, 0 , 0 
         self.ep_len = 0 
         self.fo_in = np.zeros((replay_size,obs_size+action_dim)) 
-        self.fo_r = np.zeros((replay_size,obs_size+action_dim)) 
+        self.fo_r = [None for _ in range(self.replay_size)]
         self.y     = np.zeros((replay_size,obs_size)) 
 
     def step_update(self,o,r,a) : 
@@ -24,12 +24,12 @@ class new_buffer() :
         num_objects = len(keys) 
         obs = np.zeros((num_objects,self.obs_dim))  
         act = np.zeros((num_objects,self.action_dim)) 
-        rel = np.zeros(num_objects)
+        rel = [ None for _ in range(num_objects)]
         for i,elem in enumerate(keys) : 
             obs[i] = o[elem]
             act[i] = a[elem]
-            rel[i] = int(r[elem]) 
-        rel = (np.rint(rel)).astype(int)
+            rel[i] = r[elem] 
+
         self.trajectory.append([obs,act,rel]) 
         self.ep_len +=1 
 
@@ -45,11 +45,14 @@ class new_buffer() :
         for t in range(len(self.trajectory)-1) : 
             o,a,r,y = self.trajectory[t][0],self.trajectory[t][1],self.trajectory[t][2],self.trajectory[t+1][0] 
             num_objects = o.shape[0] 
-            o_comb = np.concatenate((o,a),axis=1)  
-            v = o_comb[r] 
+            o_comb = np.concatenate((o,a),axis=1)   
             for i in range(num_objects) : 
                 self.fo_in[self.ptr] = o_comb[i] 
-                self.fo_r[self.ptr] = v[i] 
+                rels = r[i] 
+                v = np.zeros((len(rels),self.obs_dim+self.action_dim)) 
+                for j in range(len(rels)) : 
+                    v[j] = o_comb[int(rels[j])] 
+                self.fo_r[self.ptr] = v 
                 self.y[self.ptr] = y[i] 
                 self.ptr = (self.ptr+1)% self.max_size
                 self.size = min(self.size+1,self.max_size)
@@ -57,17 +60,17 @@ class new_buffer() :
     def sample_batch(self) :
         # Sample random idxs from buffer 
         # fr_u,fr_v are input to the relation model, effects (obtained using relation model) and fo_u are input to the object model, y is the ground truth
-        idxs = np.random.randint(0, self.size, size=self.batch_size)
-        return dict(fo_in=self.fo_in[idxs],
-                    fo_r=self.fo_r[idxs],
-                    y=self.y[idxs])
+        idx = int(np.random.randint(0, self.size, size=self.batch_size))
+        return dict(fo_in=self.fo_in[idx],
+                    fo_r=self.fo_r[idx],
+                    y=self.y[idx])
                 
     def multi_step_push(self,t) : 
         state = {} 
-        o,r = self.trajectory[t][0],self.trajectory[t][2]
-        v = o[r] 
+        o,a,r = self.trajectory[t][0],self.trajectory[t][1],self.trajectory[t][2]
+        o = np.concatenate((o,a),axis=1)
         state['fo_in'] = o 
-        state['fo_r'] = v
+        state['fo_r'] = r 
         for i in range(self.horizon) :  
             state['y_{}'.format(i+1)] = self.trajectory[t+i+1][0]
             state['a_{}'.format(i)] = self.trajectory[t+i][1]
@@ -92,7 +95,6 @@ class new_buffer() :
         self.push_to_buffer()
         for _ in range(500) :
             t= np.random.randint(0,self.ep_len-self.horizon-1)
-            #for t in range(self.ep_len - self.horizon) :
             try :
                 self.multi_step_push(t)
             except :
@@ -553,7 +555,7 @@ class RingEnv(Env):
             leader, dist = veh.leader() 
             obs = [veh.speed / max_speed, leader.speed / max_speed, dist / max_dist,0]
             obs_dict[veh.id] = obs 
-            relations_dict[veh.id] = leader.id
+            relations_dict[veh.id] = [int(leader.id),2]
             actions_dict[veh.id]  = 0 
         
         if action is None : 
@@ -565,7 +567,7 @@ class RingEnv(Env):
             leader, dist = veh.leader() 
             obs = [veh.speed / max_speed, leader.speed / max_speed, dist / max_dist,1]
             obs_dict[veh.id] = obs 
-            relations_dict[veh.id] = leader.id
+            relations_dict[veh.id] = [int(leader.id),2]
             actions_dict[veh.id]  = a  
   
         self.c.buffer.step_update(obs_dict,relations_dict,actions_dict)

@@ -1125,3 +1125,10 @@ class Config(Namespace):
             self.link_model_best(save_path)
             self.log('Linked %s to new saved model %s' % (self.model_best, save_path))
         return save_path
+
+    def get_save_path(self) : 
+        path = self.res+'/dynamics_models' 
+        if not os.path.exists(path) :
+            os.makedirs(path) 
+        path += '/model_' +str(self._i) + '.pth'
+        return path  

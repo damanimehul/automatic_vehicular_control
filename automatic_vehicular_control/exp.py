@@ -15,7 +15,7 @@ class Main(Config):
         super().__init__(res, *args, **kwargs)
         if tmp:
             os.environ['WANDB_MODE'] = 'dryrun'
-        c.setdefaults(e=False, tb=True, wb=False)
+        c.setdefaults(e=False, tb=True, wb=False,load_dpath=None,train_dynamics=True)
         c.logger = c.logger and c.e is False
         if tmp and c.e is False:
             res.mk()
@@ -137,12 +137,18 @@ class Main(Config):
         c.setdefaults(dynamics='interaction',prediction_horizon=10,no_rl=False,wboffline=False)
         if c.dynamics == 'interaction': 
             c.int_net = InteractionNetwork(c) 
+            c.int_optimizer = optim.Adam(c.int_net.parameters(),lr=1e-4)
+            c.int_criterion = nn.MSELoss() 
             print('Dynamics Model Set to Interaction Network')
         else : 
             c.int_net = SimpleNetwork(c) 
+            c.int_optimizer = optim.Adam(c.int_net.parameters(),lr=1e-4)
+            c.int_criterion = nn.MSELoss() 
             print('Dynamics Model Set to Simple Network')
-        c.int_optimizer = optim.Adam(c.int_net.parameters(),lr=1e-4)
-        c.int_criterion = nn.MSELoss() 
+
+        if c.load_dpath is not None : 
+            c.int_net.load_state_dict(torch.load(c.load_dpath))
+            print('Loaded Dynamics Model from provided path')
 
         c._alg = (eval(c.alg) if isinstance(c.alg, str) else c.alg)(c)
         c.set_model()
@@ -408,3 +414,113 @@ class Main(Config):
                 c.setdefaults(n_workers=1, n_rollouts_per_worker=c.n_rollouts_per_step, use_ray=False)
             assert c.n_workers * c.n_rollouts_per_worker == c.n_rollouts_per_step
             c.train()
+
+class Modified(Main) : 
+
+    flow_base = Path.env('F')._real
+
+    never_save = {'trial', 'has_av', 'e', 'disable_amp', 'opt_level', 'tmp'} | Config.never_save
+
+    def __init__(c, res, *args, **kwargs):
+        tmp = Path(res)._real in [Path.env('HOME'), Modified.flow_base, Modified.flow_base / 'all_results']
+        if tmp:
+            res = Modified.flow_base / 'tmp' / rand_string(8)
+        kwargs.setdefault('disable_amp', True)
+        kwargs.setdefault('tmp', tmp)
+        super().__init__(res, *args, **kwargs)
+        if tmp:
+            os.environ['WANDB_MODE'] = 'dryrun'
+        c.setdefaults(e=False, tb=True, wb=False,load_dpath=None,train_dynamics=True,use_rl=False)
+        c.logger = c.logger and c.e is False
+        if tmp and c.e is False:
+            res.mk()
+            c.log('Temporary run for testing with res=%s' % res) 
+
+    def train(c):
+        c.on_train_start()
+        while c._i < c.n_steps:
+            c.on_step_start()
+            with torch.no_grad():
+                rollouts = c.rollouts()
+            gd_stats = {}
+            if len(rollouts.obs):
+                t_start = time()
+                if c.use_rl: 
+                    try : 
+                        c._alg.optimize(rollouts)
+                    except :
+                        print('Problem in RL training at iteration',c._i) 
+                    gd_stats.update(gd_time=time() - t_start) 
+                if c.dynamics is not None and c.train_dynamics : 
+                    c.int_net.optimize(c) 
+            c.on_step_end(gd_stats)
+            c._i += 1
+        c.on_step_start() # last step
+        with torch.no_grad():
+            rollouts = c.rollouts()
+            c.on_step_end(gd_stats)
+        c.on_train_end() 
+
+    def rollout(c):
+        c.setdefaults(skip_stat_steps=0, i_rollout=0, rollout_kwargs=None)
+        if c.rollout_kwargs and c.e is False:
+            c.update(c.rollout_kwargs[c.i_rollout])
+        t_start = time()
+
+        ret = c._env.reset()
+        if not isinstance(ret, dict):
+            ret = dict(obs=ret)
+        rollout = NamedArrays()
+        rollout.append(**ret)
+
+        done = False
+        a_space = c.action_space
+        step = 0
+        while step < c.horizon + c.skip_stat_steps and not done:
+            if c.use_rl : 
+                try : 
+                    pred = from_torch(c._model(to_torch(rollout.obs[-1]), value=False, policy=True, argmax=False))
+                    if c.get('aclip', True) and isinstance(a_space, Box):
+                        pred.action = np.clip(pred.action, a_space.low, a_space.high) 
+                except :  
+                    print('Something went wrong when doing forward prop', print(rollout.obs[-1]))
+                    pred = {} 
+                    pred['action'] = np.zeros((1))
+                    pred['policy'] = np.zeros((2))
+                rollout.append(**pred)
+                ret = c._env.step(rollout.action[-1])
+            else : 
+                ret = c._env.step() 
+
+            if isinstance(ret, tuple):
+                obs, reward, done, info = ret
+                ret = dict(obs=obs, reward=reward, done=done, info=info)
+            done = ret.setdefault('done', False)
+            if done:
+                ret = {k: v for k, v in ret.items() if k not in ['obs', 'id']}
+            rollout.append(**ret)
+            step += 1
+
+        stats = dict(rollout_time=time() - t_start, **c.get_env_stats()) 
+        c.buffer.end_episode() 
+        return rollout, stats
+
+    def on_rollout_end(c, rollout, stats, ii=None):
+        """ Compute value, calculate advantage, log stats """
+        if c.use_rl : 
+            return super().on_rollout_end(c,rollout,stats,ii) 
+        else : 
+            t_start = time()
+            step_id_ = rollout.pop('id', None)
+            log = c.get_log_ii(ii)
+            log(**stats)
+            log(rollout_end_time=time() - t_start)
+
+        return rollout 
+
+    def on_step_end(c, stats={}):
+        c.log_stats(stats, print_time=True)
+        c.log('')
+        if c.dynamics is not None and c._i % 5 ==0 : 
+            save_path = c.get_save_path()
+            torch.save(c.int_net.state_dict(),save_path)

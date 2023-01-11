@@ -653,19 +653,35 @@ class InteractionNetwork(nn.Module):
             i+=4 
     
     def forward(self, fo_in, fr_u, fr_v): 
-        effects = self.relational_model(torch.cat([fr_u,fr_v],2))
+        x = torch.cat([fr_u,fr_v],1)
+        effects = self.relational_model(x)
+        effects = torch.sum(effects,dim=0,keepdim=True) 
         effects=  effects.view(-1,self.effect_dim)
+        fo_in = fo_in.view(1,-1)
         obj_in = torch.cat([fo_in, effects],1) 
         predicted = self.object_model(obj_in)
         return predicted
 
+    def eval_f(self,x) :
+        fo_in,fr_u,fr_v = x[0],x[1],x[2] 
+        return self.forward(fo_in,fr_u,fr_v)
+
+    def eval_grad(self,x) : 
+        f_pred = self.eval_f(x) 
+        obs = f_pred[0] 
+        elem_1 = obs[0]
+        
     def optimize(self,c) : 
         batch_stats, multi_step_stats=[],[] 
         for i in range(50):
             batch = c.buffer.sample_batch() 
-            fo_in, fr_u,fr_v,y= batch['fo_u'], batch['fr_u'], batch['fr_v'] , batch['y']
-            fo_in, fr_u,fr_v,y = torch.from_numpy(fo_in), torch.from_numpy(fr_u), torch.from_numpy(fr_v), torch.from_numpy(y)
-            predicted = c.int_net(fo_in.float(),fr_u.float(),fr_v.float()) 
+            fo_in, fo_r,y= batch['fo_in'], batch['fo_r'], batch['y']
+            num_r = fo_r.shape[0] 
+            o_in = np.zeros((num_r,self.object_dim+self.action_dim)) 
+            for i in range(num_r) : 
+                o_in[i] = fo_in 
+            fo_in, fo_r,y = torch.from_numpy(o_in), torch.from_numpy(fo_r), torch.from_numpy(y)
+            predicted = c.int_net(fo_in[0].float(),fo_in.float(),fo_r.float()) 
             loss = c.int_criterion(predicted, y.float())
             c.int_optimizer.zero_grad()
             loss.backward()
@@ -674,10 +690,12 @@ class InteractionNetwork(nn.Module):
         c.log_stats(pd.DataFrame(batch_stats).mean(axis=0), ii=i, n_ii=c.n_gds) 
         c.flush_writer_buffer() 
 
+
         features = ['speed','leader_speed','dist'] 
  
-        for _ in range(100) : 
-            losses,feature_losses,baseline_losses = self.test_multi_step(c) 
+        for _ in range(10) : 
+            with torch.no_grad() : 
+                losses,feature_losses,baseline_losses = self.test_multi_step(c) 
             for t in self.log_steps :
                 stat = {'{}_step_loss'.format(t):from_torch(losses[t])}
                 multi_step_stats.append(stat)  
@@ -691,14 +709,23 @@ class InteractionNetwork(nn.Module):
         c.log_stats(pd.DataFrame(multi_step_stats).mean(axis=0), ii=i, n_ii=c.n_gds) 
         c.flush_writer_buffer() 
 
+    def get_inputs(self,ind,fo_in,r) : 
+        num_r = len(r[ind])
+        r_in = fo_in[r[ind]] 
+        o_in = torch.zeros((num_r,self.object_dim+self.action_dim)) 
+        for i in range(num_r) : 
+            o_in[i] = fo_in[ind]
+        return o_in, r_in
+
     def test_multi_step(self,c) : 
         init_state = c.buffer.sample_multi_step() 
-        fo_in, fr_u,fr_v ,r_map, num_objects = init_state['fo_in'], init_state['fr_u'], init_state['fr_v'] ,init_state['r'], init_state['num_objects']
-        fo_in, fr_u,fr_v = torch.from_numpy(fo_in), torch.from_numpy(fr_u), torch.from_numpy(fr_v)
-        x_init = deepcopy(fo_in[:,0:4])
+        fo_in, fo_r = init_state['fo_in'], init_state['fo_r']
+        fo_in= torch.from_numpy(fo_in)
+        num_objects = fo_in.shape[0] 
         losses,feature_losses,baseline_losses ={} , {} , {} 
         ground_truths = {} 
         actions = {} 
+        x_init = deepcopy(fo_in[:,0:4])
         for k in range(1,self.prediction_horizon) : 
             ground_truths[k] = torch.from_numpy(init_state['y_{}'.format(k)] )
             losses[k] = [] 
@@ -707,18 +734,17 @@ class InteractionNetwork(nn.Module):
                 baseline_losses[k] = c.int_criterion(ground_truths[k].float(), x_init.float()) 
 
         for t in range(1,self.prediction_horizon): 
-            a = actions[t] 
-            predicted = c.int_net(fo_in.float(),fr_u.float(),fr_v.float()) 
+            predicted = torch.zeros((num_objects,self.object_dim))
+            for i in range(num_objects): 
+                o_in, r_in = self.get_inputs(i,fo_in,fo_r)
+                predicted[i] = c.int_net(fo_in[i].float(),o_in.float(),r_in.float()) 
+            a = actions[t]
             y = ground_truths[t]
             losses[t] = c.int_criterion(predicted, y.float()) 
             feature_losses = self.individual_losses(y,predicted,t,feature_losses,c) 
             predicted = torch.cat([predicted,a],dim=1)
             fo_in = predicted 
-            fr_u = predicted.view(-1,1,self.object_dim+self.action_dim) 
-            for i in range(num_objects) : 
-                fr_v[i] = fo_in[int(r_map[i])] 
-            fr_v = fr_v.view(-1,1,self.object_dim+self.action_dim) 
-            
+         
         return losses,feature_losses,baseline_losses
 
     def individual_losses(self,y,predicted,t,feature_losses,c) : 
@@ -772,10 +798,10 @@ class RelationalModel(nn.Module):
         Returns:
             [batch_size, n_relations, output_size]
         '''
-        batch_size, n_relations, input_size = x.size()
+        n_relations, input_size = x.size()
         x = x.view(-1, input_size)
         x = self.layers(x)
-        x = x.view(batch_size, n_relations, self.output_size)
+        x = x.view(n_relations, self.output_size)
         return x
 
 class SimpleNetwork(nn.Module):
@@ -794,11 +820,33 @@ class SimpleNetwork(nn.Module):
         predicted = self.object_model(obj_in)
         return predicted
 
+    def eval_f(self,x) :
+        return self.forward(x)
+
+    def eval_grad(self,x) : 
+        x = x[0]
+        x.requires_grad_() 
+        f_pred = self.eval_f(x) 
+        f_pred[0].backward() 
+
+    def eval_grad_2(self,x,input_actions) : 
+        x = x[0]
+        x.requires_grad_() 
+        obs_in = copy.deepcopy(x) 
+        obj = 0 
+        input_actions.requires_grad_() 
+        for i in range(self.prediction_horizon) : 
+            f_pred = self.eval_f(obs_in) 
+            obj += f_pred[0] 
+            a= copy.deepcopy(input_actions[i]) 
+            obs_in = torch.cat([f_pred,input_actions[i]],dim=1) 
+        obj.backward() 
+        
     def optimize(self,c) : 
         batch_stats, multi_step_stats=[],[] 
         for i in range(50):
             batch = c.buffer.sample_batch() 
-            fo_in,y = batch['fo_u'], batch['y']
+            fo_in,y = batch['fo_in'], batch['y']
             fo_in,y = torch.from_numpy(fo_in),torch.from_numpy(y)
             predicted = c.int_net(fo_in.float())
             loss = c.int_criterion(predicted, y.float())
@@ -820,12 +868,14 @@ class SimpleNetwork(nn.Module):
 
     def test_multi_step(self,c) : 
         init_state = c.buffer.sample_multi_step() 
-        fo_in, fr_u,fr_v ,r_map, num_objects = init_state['fo_in'], init_state['fr_u'], init_state['fr_v'] ,init_state['r'], init_state['num_objects']
-        fo_in, fr_u,fr_v = torch.from_numpy(fo_in), torch.from_numpy(fr_u), torch.from_numpy(fr_v)
+        fo_in, fo_r = init_state['fo_in'], init_state['fo_r']
+        fo_in = np.concatenate((fo_in,init_state['a_0']),axis=1) 
+        fo_in, fo_r = torch.from_numpy(fo_in), torch.from_numpy(fo_r)
         x_init = deepcopy(fo_in[:,0:4])
         losses,baseline_losses={} , {} 
         ground_truths = {} 
         actions= {} 
+
         for k in range(1,self.prediction_horizon) : 
             ground_truths[k] = torch.from_numpy(init_state['y_{}'.format(k)] )
             losses[k] = [] 
@@ -835,8 +885,51 @@ class SimpleNetwork(nn.Module):
         for t in range(1,self.prediction_horizon): 
             a=actions[t] 
             predicted = c.int_net(fo_in.float())
-            y = ground_truths[t]
+            y = ground_truths[t] 
             losses[t] = c.int_criterion(predicted, y.float()) 
             predicted = torch.cat([predicted,a],dim=1)
             fo_in = predicted  
         return losses, baseline_losses
+
+    def get_action(self,c) : 
+        fo_in = c._env.get_obs() 
+        num_objects = fo_in.shape[0]
+        init_actions = np.zeros((self.prediction_horizon,num_objects,self.action_dim)) 
+        grads,obj = self.get_grad(c,init_actions)   
+        for i in range(100) : 
+            print(init_actions[:,0,0].shape)
+            init_actions[:,0,0] += 0.01*grads 
+            grads,obj = self.get_grad(c,init_actions)   
+            print('iteration:', i , obj)
+
+
+    def get_grad(self,c,init_actions=None) :  
+        fo_in = c._env.get_obs() 
+        num_objects = fo_in.shape[0]
+        if init_actions is None :
+            init_actions = np.zeros((self.prediction_horizon,num_objects,self.action_dim)) 
+
+        actions =[] 
+        for i in range(self.prediction_horizon) : 
+            a= torch.from_numpy(init_actions[i]) 
+            actions.append(a.float())
+            actions[i].requires_grad_() 
+        obj = 0 
+        for i in range(self.prediction_horizon) : 
+            if i==0: 
+                fo_in =  torch.from_numpy(fo_in)
+                fo_in = fo_in.float() 
+            fo_in.requires_grad_() 
+            pred = self.forward(torch.cat([fo_in,actions[i]],dim=1)) 
+            obj += pred[0][0]
+            fo_in = pred 
+
+        obj.backward() 
+        grads = np.zeros(self.prediction_horizon)
+        for i,a in enumerate(actions) : 
+            grads[i] = a.grad[0] 
+        return grads, obj.float() 
+
+        
+
+
