@@ -1,0 +1,18 @@
+alg: !!python/name:automatic_vehicular_control.ut.TRPO ''
+dynamics: simple
+gamma: 0.999
+horizon: 3000
+load_dpath: null
+n_rollouts_per_step: 1
+n_steps: 1000
+n_workers: 1
+prediction_horizon: 20
+skip_stat_steps: 1000
+tag: new-snrl-v1
+tb: false
+train_dynamics: true
+use_critic: false
+use_rl: false
+warmup_steps: 1000
+wb: true
+wboffline: true
