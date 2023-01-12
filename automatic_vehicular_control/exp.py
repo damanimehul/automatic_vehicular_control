@@ -64,37 +64,38 @@ class Main(Config):
     def _lr(c):
         return c.schedule(c.get('lr', 1e-4), c.get('lr_schedule'))
 
-    def log_stats(c, stats, ii=None, n_ii=None, print_time=False):
+    def log_stats(c, stats,supress=False, ii=None, n_ii=None, print_time=False):
         stats = {k: v for k, v in stats.items() if v is not None}
-        total_time = time() - c._run_start_time
-        if print_time:
-            stats['total_time'] = total_time
+        if not supress:
+            total_time = time() - c._run_start_time
+            if print_time:
+                stats['total_time'] = total_time
 
-        prints = []
-        if ii is not None:
-            prints.append('ii {:2d}'.format(ii))
+            prints = []
+            if ii is not None:
+                prints.append('ii {:2d}'.format(ii))
 
-        prints.extend('{} {:.3g}'.format(*kv) for kv in stats.items())
+            prints.extend('{} {:.3g}'.format(*kv) for kv in stats.items())
 
-        widths = [len(x) for x in prints]
-        line_w = terminal_width()
-        prefix = 'i {:d}'.format(c._i)
-        i_start = 0
-        curr_w = len(prefix) + 3
-        curr_prefix = prefix
-        for i, w in enumerate(widths):
-            if curr_w + w > line_w:
-                c.log(' | '.join([curr_prefix, *prints[i_start: i]]))
-                i_start = i
-                curr_w = len(prefix) + 3
-                curr_prefix = ' ' * len(prefix)
-            curr_w += w + 3
-        c.log(' | '.join([curr_prefix, *prints[i_start:]]))
-        sys.stdout.flush()
+            widths = [len(x) for x in prints]
+            line_w = terminal_width()
+            prefix = 'i {:d}'.format(c._i)
+            i_start = 0
+            curr_w = len(prefix) + 3
+            curr_prefix = prefix
+            for i, w in enumerate(widths):
+                if curr_w + w > line_w:
+                    c.log(' | '.join([curr_prefix, *prints[i_start: i]]))
+                    i_start = i
+                    curr_w = len(prefix) + 3
+                    curr_prefix = ' ' * len(prefix)
+                curr_w += w + 3
+            c.log(' | '.join([curr_prefix, *prints[i_start:]]))
+            sys.stdout.flush()
 
-        if ii is not None:
-            c._writer_buffer.append(**stats)
-            return
+            if ii is not None:
+                c._writer_buffer.append(**stats)
+                return
 
         c.add_stats(stats)
 

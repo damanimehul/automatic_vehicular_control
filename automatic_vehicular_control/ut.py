@@ -647,10 +647,10 @@ class InteractionNetwork(nn.Module):
         self.effect_dim = effect_dim
         self.action_dim = action_dim
         self.prediction_horizon = c.prediction_horizon 
-        self.log_steps,i = [1,2,3,4], 5
+        self.log_steps,i = [1,3,5], 5
         while i <self.prediction_horizon : 
             self.log_steps.append(i) 
-            i+=4 
+            i+=5 
     
     def forward(self, fo_in, fr_u, fr_v): 
         x = torch.cat([fr_u,fr_v],1)
@@ -672,17 +672,19 @@ class InteractionNetwork(nn.Module):
         elem_1 = obs[0]
         
     def optimize(self,c) : 
-        batch_stats, multi_step_stats=[],[] 
+        batch_stats, multi_step_stats,feature_stats=[],[] , [] 
         for i in range(50):
-            batch = c.buffer.sample_batch() 
-            fo_in, fo_r,y= batch['fo_in'], batch['fo_r'], batch['y']
-            num_r = fo_r.shape[0] 
-            o_in = np.zeros((num_r,self.object_dim+self.action_dim)) 
-            for i in range(num_r) : 
-                o_in[i] = fo_in 
-            fo_in, fo_r,y = torch.from_numpy(o_in), torch.from_numpy(fo_r), torch.from_numpy(y)
-            predicted = c.int_net(fo_in[0].float(),fo_in.float(),fo_r.float()) 
-            loss = c.int_criterion(predicted, y.float())
+            loss = 0 
+            for j in range(32):
+                batch = c.buffer.sample_batch() 
+                fo_in, fo_r,y= batch['fo_in'], batch['fo_r'], batch['y']
+                num_r = fo_r.shape[0] 
+                o_in = np.zeros((num_r,self.object_dim+self.action_dim)) 
+                for i in range(num_r) : 
+                    o_in[i] = fo_in 
+                fo_in, fo_r,y = torch.from_numpy(o_in), torch.from_numpy(fo_r), torch.from_numpy(y)
+                predicted = c.int_net(fo_in[0].float(),fo_in.float(),fo_r.float()) 
+                loss += c.int_criterion(predicted, y.float())
             c.int_optimizer.zero_grad()
             loss.backward()
             c.int_optimizer.step()     
@@ -690,10 +692,9 @@ class InteractionNetwork(nn.Module):
         c.log_stats(pd.DataFrame(batch_stats).mean(axis=0), ii=i, n_ii=c.n_gds) 
         c.flush_writer_buffer() 
 
-
         features = ['speed','leader_speed','dist'] 
  
-        for _ in range(10) : 
+        for _ in range(100) : 
             with torch.no_grad() : 
                 losses,feature_losses,baseline_losses = self.test_multi_step(c) 
             for t in self.log_steps :
@@ -702,11 +703,12 @@ class InteractionNetwork(nn.Module):
             for t in self.log_steps : 
                 for f in features : 
                     stat = {'{}_{}_step_loss'.format(f,t):from_torch(feature_losses[t][f])} 
-                    multi_step_stats.append(stat) 
+                    feature_stats.append(stat) 
                 stat = {'baseline_{}_step_loss'.format(t):from_torch(baseline_losses[t])} 
-                multi_step_stats.append(stat) 
+                feature_stats.append(stat) 
 
         c.log_stats(pd.DataFrame(multi_step_stats).mean(axis=0), ii=i, n_ii=c.n_gds) 
+        c.log_stats(pd.DataFrame(feature_stats).mean(axis=0), ii=i, n_ii=c.n_gds,supress=True)
         c.flush_writer_buffer() 
 
     def get_inputs(self,ind,fo_in,r) : 
@@ -811,10 +813,10 @@ class SimpleNetwork(nn.Module):
         self.object_dim = object_dim
         self.action_dim = action_dim
         self.prediction_horizon = c.prediction_horizon 
-        self.log_steps,i = [1,2,3,4], 5
+        self.log_steps,i = [1,3,5], 5
         while i <self.prediction_horizon : 
             self.log_steps.append(i) 
-            i+=4 
+            i+=5 
     
     def forward(self, obj_in):
         predicted = self.object_model(obj_in)
@@ -863,14 +865,13 @@ class SimpleNetwork(nn.Module):
                 multi_step_stats.append(stat) 
                 stat = {'baseline_{}_step_loss'.format(t):from_torch(baseline_losses[t])} 
                 multi_step_stats.append(stat) 
-        c.log_stats(pd.DataFrame(multi_step_stats).mean(axis=0), ii=i, n_ii=c.n_gds) 
+        c.log_stats(pd.DataFrame(multi_step_stats).mean(axis=0), ii=i, n_ii=c.n_gds,supress=True) 
         c.flush_writer_buffer() 
 
     def test_multi_step(self,c) : 
         init_state = c.buffer.sample_multi_step() 
-        fo_in, fo_r = init_state['fo_in'], init_state['fo_r']
-        fo_in = np.concatenate((fo_in,init_state['a_0']),axis=1) 
-        fo_in, fo_r = torch.from_numpy(fo_in), torch.from_numpy(fo_r)
+        fo_in = init_state['fo_in']
+        fo_in = torch.from_numpy(fo_in)
         x_init = deepcopy(fo_in[:,0:4])
         losses,baseline_losses={} , {} 
         ground_truths = {} 
