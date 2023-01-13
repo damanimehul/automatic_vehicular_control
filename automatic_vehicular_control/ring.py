@@ -660,6 +660,7 @@ class RingEnv(Env):
 
 class Ring(Modified):
     def create_env(c):
+        c.object_dim = 4 
         return NormEnv(c, RingEnv(c))
 
     @property

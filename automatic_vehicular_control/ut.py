@@ -727,7 +727,7 @@ class InteractionNetwork(nn.Module):
         losses,feature_losses,baseline_losses ={} , {} , {} 
         ground_truths = {} 
         actions = {} 
-        x_init = deepcopy(fo_in[:,0:4])
+        x_init = deepcopy(fo_in[:,0:self.object_dim])
         for k in range(1,self.prediction_horizon) : 
             ground_truths[k] = torch.from_numpy(init_state['y_{}'.format(k)] )
             losses[k] = [] 
@@ -872,7 +872,7 @@ class SimpleNetwork(nn.Module):
         init_state = c.buffer.sample_multi_step() 
         fo_in = init_state['fo_in']
         fo_in = torch.from_numpy(fo_in)
-        x_init = deepcopy(fo_in[:,0:4])
+        x_init = deepcopy(fo_in[:,0:self.object_dim])
         losses,baseline_losses={} , {} 
         ground_truths = {} 
         actions= {} 

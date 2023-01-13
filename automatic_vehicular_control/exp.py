@@ -137,12 +137,12 @@ class Main(Config):
         c._env = c.create_env() 
         c.setdefaults(dynamics='interaction',prediction_horizon=10,no_rl=False,wboffline=False)
         if c.dynamics == 'interaction': 
-            c.int_net = InteractionNetwork(c) 
+            c.int_net = InteractionNetwork(c,object_dim=c.obj_dim) 
             c.int_optimizer = optim.Adam(c.int_net.parameters(),lr=1e-4)
             c.int_criterion = nn.MSELoss() 
             print('Dynamics Model Set to Interaction Network')
         else : 
-            c.int_net = SimpleNetwork(c) 
+            c.int_net = SimpleNetwork(c,object_dim=c.obj_dim) 
             c.int_optimizer = optim.Adam(c.int_net.parameters(),lr=1e-4)
             c.int_criterion = nn.MSELoss() 
             print('Dynamics Model Set to Simple Network')
@@ -522,6 +522,6 @@ class Modified(Main) :
     def on_step_end(c, stats={}):
         c.log_stats(stats, print_time=True)
         c.log('')
-        if c.dynamics is not None and c._i % 5 ==0 : 
+        if c.dynamics is not None and c._i % 50 ==0 : 
             save_path = c.get_save_path()
             torch.save(c.int_net.state_dict(),save_path)

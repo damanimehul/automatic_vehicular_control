@@ -4,7 +4,7 @@ from automatic_vehicular_control.u import *
 
 class new_buffer() : 
 
-    def __init__(self,obs_size=4,batch_size=1,replay_size=2000000,prediction_horizon=10,action_dim=1) : 
+    def __init__(self,obs_size=7,batch_size=1,replay_size=2000000,prediction_horizon=10,action_dim=1) : 
         self.obs_dim = obs_size 
         self.batch_size = batch_size 
         self.replay_size = replay_size 
@@ -108,6 +108,7 @@ class FigureEightEnv(Env):
     def def_sumo(self):
         c = self.c
 
+
         r = c.radius
         ring_length = r * (3 * np.pi / 2)
         nodes = E('nodes',
@@ -194,21 +195,27 @@ class FigureEightEnv(Env):
         max_dist = max(x.route_position[route] + x.length for x in route.edges)
 
         state = np.array([(v.edge.route_position[route] + v.laneposition, v.speed) for v in vehs])
+
         mina,minb,minc = 10000,10000,10000 
         id_a,id_b,id_c = None,None,None 
-    
-        for veh in ts.types.human.vehicles:
+
+        pos_dict = {v.id:[0,0,0] for v in vehs}
+
+        for veh in vehs:
             if 'right' in str(veh.edge) :
+                pos_dict[veh.id][0] = 1
                 dis = veh.edge.route_position[route] + veh.laneposition 
                 if dis< mina : 
                     mina = dis 
                     id_a = veh.id 
             elif 'left' in str(veh.edge) :
+                pos_dict[veh.id][1] = 1
                 dis = veh.edge.route_position[route] + veh.laneposition 
                 if dis< minb : 
                     minb = dis 
                     id_b = veh.id 
             else :
+                pos_dict[veh.id][2] = 1
                 dis = veh.edge.route_position[route] + veh.laneposition 
                 if dis< minc : 
                     minc = dis 
@@ -226,11 +233,18 @@ class FigureEightEnv(Env):
             leader, dist = veh.leader() 
             dis = veh.edge.route_position[route] + veh.laneposition
             obs = [dis/500, veh.speed / max_speed, leader.speed / max_speed,0]
+            obs.extend(pos_dict[veh.id])
             obs_dict[veh.id] = obs 
-            relations_dict[veh.id] = [int(leader.id)]
-            for i in edge_ids : 
-                if i!=int(veh.id) : 
-                    relations_dict[veh.id].append(i) 
+            if c.complete_graph : 
+                relations_dict[veh.id] = [] 
+                for v in vehs : 
+                    if int(v.id) != int(veh.id) : 
+                        relations_dict[veh.id].append(int(v.id))  
+            else : 
+                relations_dict[veh.id] = [int(leader.id)]
+                for i in edge_ids : 
+                    if i!=int(veh.id) : 
+                        relations_dict[veh.id].append(i) 
             actions_dict[veh.id]  = 0
 
         if action == []  : 
@@ -242,11 +256,18 @@ class FigureEightEnv(Env):
             leader, dist = veh.leader() 
             dis = veh.edge.route_position[route] + veh.laneposition
             obs = [dis/500, veh.speed / max_speed, leader.speed / max_speed,0]
+            obs.extend(pos_dict[veh.id])
             obs_dict[veh.id] = obs 
-            relations_dict[veh.id] = [int(leader.id)]
-            for i in edge_ids : 
-                if i!=int(veh.id) : 
-                    relations_dict[veh.id].append(i)  
+            if c.complete_graph : 
+                relations_dict[veh.id] = [] 
+                for v in vehs : 
+                    if int(v.id) != int(veh.id) : 
+                        relations_dict[veh.id].append(int(v.id))  
+            else :
+                relations_dict[veh.id] = [int(leader.id)]
+                for i in edge_ids : 
+                    if i!=int(veh.id) : 
+                        relations_dict[veh.id].append(i)
             actions_dict[veh.id]  = a 
 
         self.c.buffer.step_update(obs_dict,relations_dict,actions_dict)
@@ -266,6 +287,7 @@ class FigureEightEnv(Env):
 
 class FigureEight(Modified):
     def create_env(c):
+        c.obj_dim = 7
         return NormEnv(c, FigureEightEnv(c))
 
     @property
@@ -274,6 +296,7 @@ class FigureEight(Modified):
 
     def on_train_start(c):
         super().on_train_start()
+        c.setdefaults(complete_graph=False)
         if c.get('last_unbiased'):
             c._model.p_head[-1].bias.data[c.lc_av:] = 0
         c.buffer = new_buffer(prediction_horizon=c.prediction_horizon)
