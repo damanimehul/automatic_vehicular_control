@@ -12,4 +12,4 @@ module purge
 source ~/.bashrc
 module load anaconda/2021b
 cd $HOME/automatic_vehicular_control
-python full_runner.py --env ring --path run_scripts/f8-snrl-v4_2023-01-13
+python full_runner.py --env figure_eight --path run_scripts/f8-snrl-v4_2023-01-13
