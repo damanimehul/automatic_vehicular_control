@@ -11,6 +11,7 @@ def get_args() :
     parser.add_argument('--name' ,type = str , default=None , help= 'Name for campaign to run') 
     parser.add_argument('--params', type = str, default= None , help='Other specific params in a string eg. --others "--neptune --hello"')  
     parser.add_argument('--use_grid' , action='store_true', default = False , help = 'Use itertools to get all combinations of items defined in grid')
+    parser.add_argument('--env' ,type = str , default='ring' , help= 'Name for campaign to run')
     args = parser.parse_args() 
     return args 
 
@@ -102,4 +103,4 @@ with open(path+"/job.slurm","w") as f :
     f.write('source ~/.bashrc\n') 
     f.write('module load anaconda/2021b\n') 
     f.write('cd $HOME/automatic_vehicular_control\n')
-    f.write('python full_runner.py --path {}\n'.format(path)) 
+    f.write('python full_runner.py --env {} --path {}\n'.format(args.env,path)) 

@@ -555,7 +555,7 @@ class RingEnv(Env):
             leader, dist = veh.leader() 
             obs = [veh.speed / max_speed, leader.speed / max_speed, dist / max_dist,0]
             obs_dict[veh.id] = obs 
-            relations_dict[veh.id] = [int(leader.id),2]
+            relations_dict[veh.id] = [int(leader.id)]
             actions_dict[veh.id]  = 0 
         
         if action is None : 
@@ -567,7 +567,7 @@ class RingEnv(Env):
             leader, dist = veh.leader() 
             obs = [veh.speed / max_speed, leader.speed / max_speed, dist / max_dist,1]
             obs_dict[veh.id] = obs 
-            relations_dict[veh.id] = [int(leader.id),2]
+            relations_dict[veh.id] = [int(leader.id)]
             actions_dict[veh.id]  = a  
   
         self.c.buffer.step_update(obs_dict,relations_dict,actions_dict)

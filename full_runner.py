@@ -20,7 +20,10 @@ if __name__ =="__main__" :
         config+= 'res=' +str(args.path) 
     else : 
         config += 'res=' +str(args.res)
+
     if args.env == 'ring' : 
         os.system('python automatic_vehicular_control/ring.py . ' + config)
+    elif args.env == 'figure_eight' : 
+        os.system('python automatic_vehicular_control/figure_eight.py . ' + config)
 
 
