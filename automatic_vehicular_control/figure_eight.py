@@ -4,7 +4,7 @@ from automatic_vehicular_control.u import *
 
 class new_buffer() : 
 
-    def __init__(self,obs_size=7,batch_size=1,replay_size=2000000,prediction_horizon=10,action_dim=1) : 
+    def __init__(self,obs_size=4,batch_size=1,replay_size=2000000,prediction_horizon=10,action_dim=1) : 
         self.obs_dim = obs_size 
         self.batch_size = batch_size 
         self.replay_size = replay_size 
@@ -193,7 +193,7 @@ class FigureEightEnv(Env):
 
         route = nexti(ts.routes)
         max_dist = max(x.route_position[route] + x.length for x in route.edges)
-
+        
         state = np.array([(v.edge.route_position[route] + v.laneposition, v.speed) for v in vehs])
 
         mina,minb,minc = 10000,10000,10000 
@@ -202,8 +202,10 @@ class FigureEightEnv(Env):
         pos_dict = {v.id:[0,0,0] for v in vehs}
 
         for veh in vehs:
+            #print(veh.edge,veh.laneposition,veh.edge.route_position[route])
             if 'right' in str(veh.edge) :
                 pos_dict[veh.id][0] = 1
+
                 dis = veh.edge.route_position[route] + veh.laneposition 
                 if dis< mina : 
                     mina = dis 
@@ -232,8 +234,8 @@ class FigureEightEnv(Env):
         for veh in ts.types.human.vehicles:
             leader, dist = veh.leader() 
             dis = veh.edge.route_position[route] + veh.laneposition
-            obs = [dis/500, veh.speed / max_speed, leader.speed / max_speed,0]
-            obs.extend(pos_dict[veh.id])
+            obs = [dis/max_dist, veh.speed / max_speed, leader.speed / max_speed,0]
+            #obs.extend(pos_dict[veh.id])
             obs_dict[veh.id] = obs 
             if c.complete_graph : 
                 relations_dict[veh.id] = [] 
@@ -255,8 +257,8 @@ class FigureEightEnv(Env):
         for veh in ts.types.rl.vehicles : 
             leader, dist = veh.leader() 
             dis = veh.edge.route_position[route] + veh.laneposition
-            obs = [dis/500, veh.speed / max_speed, leader.speed / max_speed,0]
-            obs.extend(pos_dict[veh.id])
+            obs = [dis/max_dist, veh.speed / max_speed, leader.speed / max_speed,0]
+            #obs.extend(pos_dict[veh.id])
             obs_dict[veh.id] = obs 
             if c.complete_graph : 
                 relations_dict[veh.id] = [] 
@@ -287,7 +289,7 @@ class FigureEightEnv(Env):
 
 class FigureEight(Modified):
     def create_env(c):
-        c.obj_dim = 7
+        c.obj_dim = 4
         return NormEnv(c, FigureEightEnv(c))
 
     @property

@@ -1,0 +1,1 @@
+"{\"0\": \" tag=f8-snrl-v4 tag=f8-snrl-v4   n_workers=1 n_rollouts_per_step=1  warmup_steps=500 horizon=10000 n_steps=1000 alg=TRPO use_critic=False tb=False wb=True  wboffline=True  gamma=0.999  dynamics=simple prediction_horizon=20 complete_graph=True \"}"

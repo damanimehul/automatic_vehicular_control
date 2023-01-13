@@ -25,5 +25,7 @@ if __name__ =="__main__" :
         os.system('python automatic_vehicular_control/ring.py . ' + config)
     elif args.env == 'figure_eight' : 
         os.system('python automatic_vehicular_control/figure_eight.py . ' + config)
+    elif args.env == 'ramp' : 
+        os.system('python automatic_vehicular_control/highway_ramp.py . ' + config)
 
 
